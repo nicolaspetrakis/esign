@@ -54,6 +54,61 @@ export default function PDFViewer({
   } | null>(null);
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const renderingRef = useRef<Set<number>>(new Set());
+  const [clipboard, setClipboard] = useState<{ type: 'textbox' | 'signature'; data: TextBoxData | SignatureData } | null>(null);
+
+  // Handle keyboard shortcuts (copy/paste)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Ctrl+C or Cmd+C (copy)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedId) {
+        e.preventDefault();
+        
+        // Find the selected item
+        const selectedTextBox = textBoxes.find((tb) => tb.id === selectedId);
+        if (selectedTextBox) {
+          setClipboard({ type: 'textbox', data: { ...selectedTextBox } });
+          return;
+        }
+        
+        const selectedSignature = signatures.find((sig) => sig.id === selectedId);
+        if (selectedSignature) {
+          setClipboard({ type: 'signature', data: { ...selectedSignature } });
+        }
+      }
+      
+      // Check for Ctrl+V or Cmd+V (paste)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboard) {
+        e.preventDefault();
+        
+        const offset = 20; // Offset for pasted item
+        
+        if (clipboard.type === 'textbox') {
+          const original = clipboard.data as TextBoxData;
+          const newTextBox: TextBoxData = {
+            ...original,
+            id: `textbox-${Date.now()}`,
+            x: original.x + offset,
+            y: original.y + offset,
+          };
+          onTextBoxesChange([...textBoxes, newTextBox]);
+          setSelectedId(newTextBox.id);
+        } else if (clipboard.type === 'signature') {
+          const original = clipboard.data as SignatureData;
+          const newSignature: SignatureData = {
+            ...original,
+            id: `signature-${Date.now()}`,
+            x: original.x + offset,
+            y: original.y + offset,
+          };
+          onSignaturesChange([...signatures, newSignature]);
+          setSelectedId(newSignature.id);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, textBoxes, signatures, clipboard, onTextBoxesChange, onSignaturesChange]);
 
   // Load PDF document
   useEffect(() => {

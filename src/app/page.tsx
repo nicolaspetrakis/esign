@@ -366,7 +366,7 @@ export default function Home() {
                   </svg>
                   <span>
                     <strong>Tip:</strong> Right-click to add a text box or e-signature. Double-click to edit.
-                    Drag to move, use the corner handle to resize.
+                    Drag to move, resize with corner handle. <kbd className="px-1 py-0.5 bg-surface rounded text-xs font-mono">Ctrl+C</kbd> / <kbd className="px-1 py-0.5 bg-surface rounded text-xs font-mono">Ctrl+V</kbd> to copy/paste.
                   </span>
                 </p>
               </div>
