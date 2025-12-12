@@ -2,23 +2,16 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import ContextMenu from './ContextMenu';
+import TextBox, { TextBoxData } from './TextBox';
 
 // Set up the worker - use local copy from public folder
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
-export interface TextAnnotation {
-  id: string;
-  x: number;
-  y: number;
-  text: string;
-  pageNumber: number;
-  fontSize: number;
-}
-
 interface PDFViewerProps {
   pdfFile: File;
-  annotations: TextAnnotation[];
-  onAnnotationsChange: (annotations: TextAnnotation[]) => void;
+  textBoxes: TextBoxData[];
+  onTextBoxesChange: (textBoxes: TextBoxData[]) => void;
   scale: number;
 }
 
@@ -30,16 +23,23 @@ interface PageData {
 
 export default function PDFViewer({
   pdfFile,
-  annotations,
-  onAnnotationsChange,
+  textBoxes,
+  onTextBoxesChange,
   scale,
 }: PDFViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pages, setPages] = useState<PageData[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [renderKey, setRenderKey] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    pageNumber: number;
+    pdfX: number;
+    pdfY: number;
+  } | null>(null);
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const renderingRef = useRef<Set<number>>(new Set());
 
@@ -48,7 +48,7 @@ export default function PDFViewer({
     const loadPDF = async () => {
       setIsLoading(true);
       canvasRefs.current.clear();
-      
+
       try {
         const arrayBuffer = await pdfFile.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -80,7 +80,6 @@ export default function PDFViewer({
   useEffect(() => {
     if (!pdfDoc || pages.length === 0 || isLoading) return;
 
-    // Wait for next frame to ensure canvases are in the DOM
     const timeoutId = setTimeout(() => {
       setRenderKey((k) => k + 1);
     }, 100);
@@ -93,9 +92,8 @@ export default function PDFViewer({
     if (!pdfDoc || pages.length === 0) return;
 
     const renderPage = async (pageNum: number) => {
-      // Prevent concurrent renders of the same page
       if (renderingRef.current.has(pageNum)) return;
-      
+
       const canvas = canvasRefs.current.get(pageNum);
       if (!canvas) return;
 
@@ -105,7 +103,6 @@ export default function PDFViewer({
         const page = await pdfDoc.getPage(pageNum);
         const viewport = page.getViewport({ scale });
 
-        // Set canvas dimensions
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         canvas.style.width = `${viewport.width}px`;
@@ -114,7 +111,6 @@ export default function PDFViewer({
         const context = canvas.getContext('2d');
         if (!context) return;
 
-        // Clear canvas before rendering
         context.clearRect(0, 0, canvas.width, canvas.height);
 
         await page.render({
@@ -129,7 +125,6 @@ export default function PDFViewer({
       }
     };
 
-    // Render all pages
     pages.forEach((pageData) => {
       renderPage(pageData.pageNumber);
     });
@@ -141,79 +136,73 @@ export default function PDFViewer({
     }
   }, []);
 
-  const handleCanvasClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>, pageNumber: number) => {
+  // Handle right-click to show context menu
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent, pageNumber: number) => {
+      e.preventDefault();
       const rect = e.currentTarget.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / scale;
-      const y = (e.clientY - rect.top) / scale;
+      const pdfX = (e.clientX - rect.left) / scale;
+      const pdfY = (e.clientY - rect.top) / scale;
 
-      // Check if clicking on existing annotation
-      const clickedAnnotation = annotations.find(
-        (ann) =>
-          ann.pageNumber === pageNumber &&
-          Math.abs(ann.x - x) < 50 &&
-          Math.abs(ann.y - y) < 20
-      );
-
-      if (clickedAnnotation) {
-        setEditingId(clickedAnnotation.id);
-        return;
-      }
-
-      // Create new annotation
-      const newAnnotation: TextAnnotation = {
-        id: `annotation-${Date.now()}`,
-        x,
-        y,
-        text: '',
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
         pageNumber,
-        fontSize: 14,
-      };
-
-      onAnnotationsChange([...annotations, newAnnotation]);
-      setEditingId(newAnnotation.id);
+        pdfX,
+        pdfY,
+      });
     },
-    [annotations, onAnnotationsChange, scale]
+    [scale]
   );
 
-  const handleAnnotationChange = useCallback(
-    (id: string, text: string) => {
-      onAnnotationsChange(
-        annotations.map((ann) => (ann.id === id ? { ...ann, text } : ann))
+  // Handle click on PDF area (deselect)
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    // Only deselect if clicking on the PDF canvas area, not on a text box
+    if ((e.target as HTMLElement).tagName === 'DIV') {
+      setSelectedId(null);
+    }
+  }, []);
+
+  // Add a new text box
+  const handleAddTextBox = useCallback(() => {
+    if (!contextMenu) return;
+
+    const newTextBox: TextBoxData = {
+      id: `textbox-${Date.now()}`,
+      x: contextMenu.pdfX,
+      y: contextMenu.pdfY,
+      width: 150,
+      height: 30,
+      text: '',
+      fontSize: 14,
+      fontFamily: 'var(--font-dm-sans), system-ui, sans-serif',
+      fontWeight: 'normal',
+      color: '#000000',
+      pageNumber: contextMenu.pageNumber,
+    };
+
+    onTextBoxesChange([...textBoxes, newTextBox]);
+    setSelectedId(newTextBox.id);
+    setContextMenu(null);
+  }, [contextMenu, textBoxes, onTextBoxesChange]);
+
+  // Update a text box
+  const handleTextBoxChange = useCallback(
+    (updatedData: TextBoxData) => {
+      onTextBoxesChange(
+        textBoxes.map((tb) => (tb.id === updatedData.id ? updatedData : tb))
       );
     },
-    [annotations, onAnnotationsChange]
+    [textBoxes, onTextBoxesChange]
   );
 
-  const handleAnnotationBlur = useCallback(
+  // Delete a text box
+  const handleDeleteTextBox = useCallback(
     (id: string) => {
-      const annotation = annotations.find((ann) => ann.id === id);
-      if (annotation && annotation.text.trim() === '') {
-        // Remove empty annotations
-        onAnnotationsChange(annotations.filter((ann) => ann.id !== id));
-      }
-      setEditingId(null);
+      onTextBoxesChange(textBoxes.filter((tb) => tb.id !== id));
+      setSelectedId(null);
     },
-    [annotations, onAnnotationsChange]
-  );
-
-  const handleDeleteAnnotation = useCallback(
-    (id: string) => {
-      onAnnotationsChange(annotations.filter((ann) => ann.id !== id));
-      setEditingId(null);
-    },
-    [annotations, onAnnotationsChange]
-  );
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent, id: string) => {
-      if (e.key === 'Escape') {
-        handleAnnotationBlur(id);
-      } else if (e.key === 'Delete' && e.shiftKey) {
-        handleDeleteAnnotation(id);
-      }
-    },
-    [handleAnnotationBlur, handleDeleteAnnotation]
+    [textBoxes, onTextBoxesChange]
   );
 
   if (isLoading) {
@@ -229,9 +218,7 @@ export default function PDFViewer({
     <div ref={containerRef} className="flex flex-col items-center gap-8 py-8">
       {pages.map((pageData, index) => {
         const { pageNumber, width, height } = pageData;
-        const pageAnnotations = annotations.filter(
-          (ann) => ann.pageNumber === pageNumber
-        );
+        const pageTextBoxes = textBoxes.filter((tb) => tb.pageNumber === pageNumber);
 
         return (
           <div
@@ -258,68 +245,39 @@ export default function PDFViewer({
               }}
             />
 
-            {/* Clickable overlay for adding annotations */}
+            {/* Interactive overlay */}
             <div
-              className="absolute inset-0 cursor-crosshair"
-              onClick={(e) => handleCanvasClick(e, pageNumber)}
+              className="absolute inset-0"
+              onClick={handleClick}
+              onContextMenu={(e) => handleContextMenu(e, pageNumber)}
             />
 
-            {/* Render annotations */}
-            {pageAnnotations.map((annotation) => (
-              <div
-                key={annotation.id}
-                style={{
-                  position: 'absolute',
-                  left: annotation.x * scale,
-                  top: annotation.y * scale,
-                  transform: 'translate(-2px, -50%)',
-                }}
-              >
-                {editingId === annotation.id ? (
-                  <textarea
-                    autoFocus
-                    className="annotation-input"
-                    value={annotation.text}
-                    onChange={(e) =>
-                      handleAnnotationChange(annotation.id, e.target.value)
-                    }
-                    onBlur={() => handleAnnotationBlur(annotation.id)}
-                    onKeyDown={(e) => handleKeyDown(e, annotation.id)}
-                    style={{
-                      fontSize: annotation.fontSize * scale,
-                      minWidth: 100 * scale,
-                    }}
-                    placeholder="Type here..."
-                    rows={1}
-                  />
-                ) : (
-                  <div
-                    className="annotation-text group"
-                    style={{
-                      fontSize: annotation.fontSize * scale,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingId(annotation.id);
-                    }}
-                  >
-                    {annotation.text}
-                    <button
-                      className="absolute -right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-400"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteAnnotation(annotation.id);
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-              </div>
+            {/* Render text boxes */}
+            {pageTextBoxes.map((textBox) => (
+              <TextBox
+                key={textBox.id}
+                data={textBox}
+                scale={scale}
+                isSelected={selectedId === textBox.id}
+                onSelect={() => setSelectedId(textBox.id)}
+                onChange={handleTextBoxChange}
+                onDelete={() => handleDeleteTextBox(textBox.id)}
+              />
             ))}
           </div>
         );
       })}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onAddTextBox={handleAddTextBox}
+        />
+      )}
     </div>
   );
 }
+
