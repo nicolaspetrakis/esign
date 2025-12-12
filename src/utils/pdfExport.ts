@@ -1,5 +1,6 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import type { TextBoxData } from '@/components/TextBox';
+import type { SignatureData } from '@/components/Signature';
 
 // Convert hex color to RGB values (0-1 range)
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -14,9 +15,10 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: 0, g: 0, b: 0 };
 }
 
-export async function exportPDFWithTextBoxes(
+export async function exportPDFWithAnnotations(
   originalFile: File,
-  textBoxes: TextBoxData[]
+  textBoxes: TextBoxData[],
+  signatures: SignatureData[]
 ): Promise<Blob> {
   // Load the original PDF
   const arrayBuffer = await originalFile.arrayBuffer();
@@ -25,8 +27,11 @@ export async function exportPDFWithTextBoxes(
   // Embed fonts
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const helveticaBoldOblique = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
   const timesRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
   const timesRomanBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+  const timesRomanItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+  const timesRomanBoldItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
   const courier = await pdfDoc.embedFont(StandardFonts.Courier);
   const courierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
 
@@ -45,7 +50,7 @@ export async function exportPDFWithTextBoxes(
     // Select font based on fontFamily and fontWeight
     let font = helvetica;
     const isBold = textBox.fontWeight === 'bold';
-    
+
     if (textBox.fontFamily.includes('serif') && !textBox.fontFamily.includes('sans')) {
       font = isBold ? timesRomanBold : timesRoman;
     } else if (textBox.fontFamily.includes('mono')) {
@@ -58,7 +63,6 @@ export async function exportPDFWithTextBoxes(
     const color = hexToRgb(textBox.color);
 
     // PDF coordinates start from bottom-left, so we need to flip Y
-    // Also account for the text box height and add padding
     const pdfY = height - textBox.y - textBox.fontSize;
 
     // Draw each line of text
@@ -67,14 +71,53 @@ export async function exportPDFWithTextBoxes(
 
     for (const line of lines) {
       page.drawText(line, {
-        x: textBox.x + 4, // Add padding to match the UI
+        x: textBox.x + 4,
         y: currentY,
         size: textBox.fontSize,
         font: font,
         color: rgb(color.r, color.g, color.b),
       });
-      currentY -= textBox.fontSize * 1.2; // Line height
+      currentY -= textBox.fontSize * 1.2;
     }
+  }
+
+  // Add signatures to each page
+  // Note: Since pdf-lib doesn't support custom fonts, we use italic Times Roman
+  // for a more signature-like appearance
+  for (const signature of signatures) {
+    const pageIndex = signature.pageNumber - 1;
+    if (pageIndex < 0 || pageIndex >= pages.length) continue;
+
+    const page = pages[pageIndex];
+    const { height } = page.getSize();
+
+    // Calculate font size based on signature dimensions
+    const fontSize = Math.min(signature.height * 0.6, signature.width * 0.15);
+
+    // Select a script-like font (italic for signature feel)
+    // Map signature styles to available fonts
+    let font = timesRomanItalic;
+    const styleId = signature.style.id;
+    
+    if (styleId === 'elegant' || styleId === 'classic') {
+      font = timesRomanBoldItalic;
+    } else if (styleId === 'modern') {
+      font = helveticaBoldOblique;
+    } else if (styleId === 'formal') {
+      font = timesRomanItalic;
+    }
+
+    // PDF coordinates start from bottom-left
+    // Center the signature vertically in its box
+    const pdfY = height - signature.y - (signature.height / 2) - (fontSize / 3);
+
+    page.drawText(signature.name, {
+      x: signature.x + 4,
+      y: pdfY,
+      size: fontSize,
+      font: font,
+      color: rgb(0, 0, 0),
+    });
   }
 
   // Serialize the PDF

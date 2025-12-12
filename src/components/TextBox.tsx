@@ -212,6 +212,8 @@ export default function TextBox({
           {/* Color */}
           <input
             type="color"
+            title="Text color"
+            aria-label="Text color"
             className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent"
             value={data.color}
             onChange={(e) => onChange({ ...data, color: e.target.value })}
@@ -221,6 +223,8 @@ export default function TextBox({
           <button
             className="w-7 h-7 flex items-center justify-center rounded text-red-500 hover:bg-red-500/10 transition-colors"
             onClick={onDelete}
+            title="Delete text box"
+            aria-label="Delete text box"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
@@ -265,6 +269,8 @@ export default function TextBox({
             onChange={(e) => onChange({ ...data, text: e.target.value })}
             onBlur={handleBlur}
             onClick={(e) => e.stopPropagation()}
+            placeholder="Enter text..."
+            aria-label="Text box content"
           />
         ) : (
           <div
