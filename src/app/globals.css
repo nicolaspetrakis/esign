@@ -1,26 +1,249 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0f0f0f;
+  --foreground: #f5f5f4;
+  --accent: #f59e0b;
+  --accent-light: #fbbf24;
+  --surface: #1a1a1a;
+  --surface-elevated: #252525;
+  --border: #333333;
+  --text-muted: #a3a3a3;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-accent: var(--accent);
+  --color-accent-light: var(--accent-light);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-border: var(--border);
+  --color-text-muted: var(--text-muted);
+  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(245, 158, 11, 0.5);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.animate-fade-in-delay-1 {
+  animation: fadeIn 0.5s ease-out 0.1s forwards;
+  opacity: 0;
+}
+
+.animate-fade-in-delay-2 {
+  animation: fadeIn 0.5s ease-out 0.2s forwards;
+  opacity: 0;
+}
+
+.animate-fade-in-delay-3 {
+  animation: fadeIn 0.5s ease-out 0.3s forwards;
+  opacity: 0;
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* PDF Canvas styling */
+.pdf-page-container {
+  position: relative;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.pdf-page-container canvas {
+  display: block;
+}
+
+/* Text annotation input */
+.annotation-input {
+  position: absolute;
+  background: transparent;
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  padding: 2px 4px;
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  font-size: 14px;
+  color: #000;
+  outline: none;
+  min-width: 100px;
+  resize: none;
+  overflow: hidden;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+}
+
+.annotation-input:focus {
+  border-color: var(--accent-light);
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.3);
+}
+
+.annotation-text {
+  position: absolute;
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  font-size: 14px;
+  color: #000;
+  cursor: move;
+  padding: 2px 4px;
+  border-radius: 2px;
+  transition: background 0.15s ease;
+}
+
+.annotation-text:hover {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+/* Drop zone styling */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  transition: all 0.3s ease;
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-elevated) 100%);
+}
+
+.drop-zone:hover,
+.drop-zone.drag-over {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, var(--surface-elevated) 0%, rgba(245, 158, 11, 0.05) 100%);
+}
+
+.drop-zone.drag-over {
+  transform: scale(1.02);
+}
+
+/* Button styles */
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+  color: #000;
+  font-weight: 600;
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: var(--surface-elevated);
+  color: var(--foreground);
+  font-weight: 500;
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: var(--border);
+  border-color: var(--text-muted);
+}
+
+/* Toolbar */
+.toolbar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+/* Page indicator */
+.page-indicator {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--surface-elevated);
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+/* Loading state */
+.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--surface) 25%,
+    var(--surface-elevated) 50%,
+    var(--surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
 }
