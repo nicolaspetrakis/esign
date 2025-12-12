@@ -2,8 +2,8 @@
 
 import { useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import type { TextAnnotation } from '@/components/PDFViewer';
-import { exportPDFWithAnnotations, downloadBlob } from '@/utils/pdfExport';
+import type { TextBoxData } from '@/components/TextBox';
+import { exportPDFWithTextBoxes, downloadBlob } from '@/utils/pdfExport';
 
 // Dynamic import to avoid SSR issues with PDF.js
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), {
@@ -17,7 +17,7 @@ const PDFViewer = dynamic(() => import('@/components/PDFViewer'), {
 
 export default function Home() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [annotations, setAnnotations] = useState<TextAnnotation[]>([]);
+  const [textBoxes, setTextBoxes] = useState<TextBoxData[]>([]);
   const [scale, setScale] = useState(1.5);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -26,7 +26,7 @@ export default function Home() {
   const handleFileUpload = useCallback((file: File) => {
     if (file.type === 'application/pdf') {
       setPdfFile(file);
-      setAnnotations([]);
+      setTextBoxes([]);
     } else {
       alert('Please upload a PDF file');
     }
@@ -64,7 +64,7 @@ export default function Home() {
 
     setIsExporting(true);
     try {
-      const blob = await exportPDFWithAnnotations(pdfFile, annotations);
+      const blob = await exportPDFWithTextBoxes(pdfFile, textBoxes);
       const filename = pdfFile.name.replace('.pdf', '_edited.pdf');
       downloadBlob(blob, filename);
     } catch (error) {
@@ -73,11 +73,11 @@ export default function Home() {
     } finally {
       setIsExporting(false);
     }
-  }, [pdfFile, annotations]);
+  }, [pdfFile, textBoxes]);
 
   const handleNewDocument = useCallback(() => {
     setPdfFile(null);
-    setAnnotations([]);
+    setTextBoxes([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -180,8 +180,8 @@ export default function Home() {
                 Edit Your PDF Documents
               </h2>
               <p className="text-lg text-text-muted max-w-xl mx-auto">
-                Upload a PDF, click anywhere to add text, and download your edited document.
-                Perfect for filling out forms, adding notes, or signing documents.
+                Upload a PDF, right-click to add text boxes, customize fonts and colors,
+                then download your edited document.
               </p>
             </div>
 
@@ -276,9 +276,9 @@ export default function Home() {
                     />
                   </svg>
                 </div>
-                <h3 className="font-semibold mb-2">Click to Edit</h3>
+                <h3 className="font-semibold mb-2">Right-Click to Add</h3>
                 <p className="text-sm text-text-muted">
-                  Click anywhere on the document to add text. Perfect for filling forms.
+                  Right-click anywhere to add a text box. Drag to move, resize with the handle.
                 </p>
               </div>
 
@@ -289,13 +289,13 @@ export default function Home() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"
+                      d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
                     />
                   </svg>
                 </div>
-                <h3 className="font-semibold mb-2">Zoom Control</h3>
+                <h3 className="font-semibold mb-2">Customize Text</h3>
                 <p className="text-sm text-text-muted">
-                  Zoom in for precision editing or zoom out for an overview.
+                  Change font, size, color, and style. Make your edits look exactly right.
                 </p>
               </div>
 
@@ -312,7 +312,7 @@ export default function Home() {
                 </div>
                 <h3 className="font-semibold mb-2">Download Edited PDF</h3>
                 <p className="text-sm text-text-muted">
-                  Export your edited document as a new PDF with all annotations embedded.
+                  Export your edited document as a new PDF with all text boxes embedded.
                 </p>
               </div>
             </div>
@@ -341,7 +341,7 @@ export default function Home() {
                   </span>
                 </div>
                 <div className="text-sm text-text-muted">
-                  {annotations.length} annotation{annotations.length !== 1 ? 's' : ''}
+                  {textBoxes.length} text box{textBoxes.length !== 1 ? 'es' : ''}
                 </div>
               </div>
             </div>
@@ -359,8 +359,8 @@ export default function Home() {
                     />
                   </svg>
                   <span>
-                    <strong>Tip:</strong> Click anywhere on the document to add text. Click on existing text to edit it.
-                    Press <kbd className="px-1.5 py-0.5 bg-surface rounded text-xs font-mono">Esc</kbd> to finish editing.
+                    <strong>Tip:</strong> Right-click to add a text box. Double-click to edit text.
+                    Drag to move, use the corner handle to resize.
                   </span>
                 </p>
               </div>
@@ -370,8 +370,8 @@ export default function Home() {
             <div className="overflow-auto">
               <PDFViewer
                 pdfFile={pdfFile}
-                annotations={annotations}
-                onAnnotationsChange={setAnnotations}
+                textBoxes={textBoxes}
+                onTextBoxesChange={setTextBoxes}
                 scale={scale}
               />
             </div>
