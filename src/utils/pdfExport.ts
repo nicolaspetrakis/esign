@@ -15,23 +15,82 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: 0, g: 0, b: 0 };
 }
 
+// Render signature to canvas and return as PNG data
+async function renderSignatureToImage(signature: SignatureData): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    // Create a high-resolution canvas for better quality
+    const scale = 2; // 2x resolution for crisp signatures
+    const canvas = document.createElement('canvas');
+    canvas.width = signature.width * scale;
+    canvas.height = signature.height * scale;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      reject(new Error('Could not get canvas context'));
+      return;
+    }
+    
+    // Clear with transparent background
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Calculate font size based on signature dimensions
+    const fontSize = Math.min(signature.height * 0.6, signature.width * 0.15) * scale;
+    
+    // Set font with the signature style
+    ctx.font = `${signature.style.fontWeight} ${fontSize}px ${signature.style.fontFamily}`;
+    ctx.fillStyle = '#000000';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    
+    // Draw the signature text centered
+    ctx.fillText(signature.name, canvas.width / 2, canvas.height / 2);
+    
+    // Convert canvas to PNG blob
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Could not convert canvas to blob'));
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = () => {
+        const arrayBuffer = reader.result as ArrayBuffer;
+        resolve(new Uint8Array(arrayBuffer));
+      };
+      reader.onerror = () => reject(new Error('Could not read blob'));
+      reader.readAsArrayBuffer(blob);
+    }, 'image/png');
+  });
+}
+
+// Wait for fonts to be loaded
+async function waitForFonts(): Promise<void> {
+  // Check if fonts are already loaded
+  if (document.fonts) {
+    await document.fonts.ready;
+    
+    // Additional wait to ensure fonts are fully rendered
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
+
 export async function exportPDFWithAnnotations(
   originalFile: File,
   textBoxes: TextBoxData[],
   signatures: SignatureData[]
 ): Promise<Blob> {
+  // Wait for fonts to be loaded before rendering signatures
+  await waitForFonts();
+  
   // Load the original PDF
   const arrayBuffer = await originalFile.arrayBuffer();
   const pdfDoc = await PDFDocument.load(arrayBuffer);
 
-  // Embed fonts
+  // Embed fonts for text boxes
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const helveticaBoldOblique = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
   const timesRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
   const timesRomanBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-  const timesRomanItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
-  const timesRomanBoldItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
   const courier = await pdfDoc.embedFont(StandardFonts.Courier);
   const courierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
 
@@ -81,9 +140,7 @@ export async function exportPDFWithAnnotations(
     }
   }
 
-  // Add signatures to each page
-  // Note: Since pdf-lib doesn't support custom fonts, we use italic Times Roman
-  // for a more signature-like appearance
+  // Add signatures to each page as images
   for (const signature of signatures) {
     const pageIndex = signature.pageNumber - 1;
     if (pageIndex < 0 || pageIndex >= pages.length) continue;
@@ -91,33 +148,38 @@ export async function exportPDFWithAnnotations(
     const page = pages[pageIndex];
     const { height } = page.getSize();
 
-    // Calculate font size based on signature dimensions
-    const fontSize = Math.min(signature.height * 0.6, signature.width * 0.15);
-
-    // Select a script-like font (italic for signature feel)
-    // Map signature styles to available fonts
-    let font = timesRomanItalic;
-    const styleId = signature.style.id;
-    
-    if (styleId === 'elegant' || styleId === 'classic') {
-      font = timesRomanBoldItalic;
-    } else if (styleId === 'modern') {
-      font = helveticaBoldOblique;
-    } else if (styleId === 'formal') {
-      font = timesRomanItalic;
+    try {
+      // Render signature to PNG
+      const signatureImageBytes = await renderSignatureToImage(signature);
+      
+      // Embed the image in the PDF
+      const signatureImage = await pdfDoc.embedPng(signatureImageBytes);
+      
+      // PDF coordinates start from bottom-left
+      const pdfY = height - signature.y - signature.height;
+      
+      // Draw the signature image
+      page.drawImage(signatureImage, {
+        x: signature.x,
+        y: pdfY,
+        width: signature.width,
+        height: signature.height,
+      });
+    } catch (error) {
+      console.error('Error rendering signature:', error);
+      // Fallback: draw as text if image rendering fails
+      const fontSize = Math.min(signature.height * 0.6, signature.width * 0.15);
+      const pdfY = height - signature.y - (signature.height / 2) - (fontSize / 3);
+      
+      const font = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+      page.drawText(signature.name, {
+        x: signature.x + 4,
+        y: pdfY,
+        size: fontSize,
+        font: font,
+        color: rgb(0, 0, 0),
+      });
     }
-
-    // PDF coordinates start from bottom-left
-    // Center the signature vertically in its box
-    const pdfY = height - signature.y - (signature.height / 2) - (fontSize / 3);
-
-    page.drawText(signature.name, {
-      x: signature.x + 4,
-      y: pdfY,
-      size: fontSize,
-      font: font,
-      color: rgb(0, 0, 0),
-    });
   }
 
   // Serialize the PDF

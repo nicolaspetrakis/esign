@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import type { TextBoxData } from '@/components/TextBox';
 import type { SignatureData } from '@/components/Signature';
 import { exportPDFWithAnnotations, downloadBlob } from '@/utils/pdfExport';
+import DownloadModal from '@/components/DownloadModal';
 
 // Dynamic import to avoid SSR issues with PDF.js
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), {
@@ -23,6 +24,7 @@ export default function Home() {
   const [scale, setScale] = useState(1.5);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = useCallback((file: File) => {
@@ -62,14 +64,18 @@ export default function Home() {
     [handleFileUpload]
   );
 
-  const handleExport = useCallback(async () => {
+  const handleDownloadClick = useCallback(() => {
+    setShowDownloadModal(true);
+  }, []);
+
+  const handleExport = useCallback(async (filename: string) => {
     if (!pdfFile) return;
 
     setIsExporting(true);
     try {
       const blob = await exportPDFWithAnnotations(pdfFile, textBoxes, signatures);
-      const filename = pdfFile.name.replace('.pdf', '_signed.pdf');
       downloadBlob(blob, filename);
+      setShowDownloadModal(false);
     } catch (error) {
       console.error('Error exporting PDF:', error);
       alert('Error exporting PDF. Please try again.');
@@ -77,6 +83,11 @@ export default function Home() {
       setIsExporting(false);
     }
   }, [pdfFile, textBoxes, signatures]);
+
+  const getDefaultFilename = useCallback(() => {
+    if (!pdfFile) return 'document_signed.pdf';
+    return pdfFile.name.replace('.pdf', '_signed.pdf');
+  }, [pdfFile]);
 
   const handleNewDocument = useCallback(() => {
     setPdfFile(null);
@@ -146,28 +157,18 @@ export default function Home() {
                 New Document
               </button>
               <button
-                onClick={handleExport}
-                disabled={isExporting}
+                onClick={handleDownloadClick}
                 className="btn-primary text-sm flex items-center gap-2"
               >
-                {isExporting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                    Exporting...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                      />
-                    </svg>
-                    Download PDF
-                  </>
-                )}
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                  />
+                </svg>
+                Download PDF
               </button>
             </div>
           )}
@@ -393,6 +394,15 @@ export default function Home() {
           <p>All processing happens in your browser. Your documents never leave your device.</p>
         </div>
       </footer>
+
+      {/* Download Modal */}
+      <DownloadModal
+        isOpen={showDownloadModal}
+        defaultFilename={getDefaultFilename()}
+        onClose={() => setShowDownloadModal(false)}
+        onConfirm={handleExport}
+        isExporting={isExporting}
+      />
     </div>
   );
 }
