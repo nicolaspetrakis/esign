@@ -4,6 +4,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import ContextMenu from './ContextMenu';
 import TextBox, { TextBoxData } from './TextBox';
+import Signature, { SignatureData } from './Signature';
+import SignatureModal, { SignatureStyle } from './SignatureModal';
 
 // Set up the worker - use local copy from public folder
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -12,6 +14,8 @@ interface PDFViewerProps {
   pdfFile: File;
   textBoxes: TextBoxData[];
   onTextBoxesChange: (textBoxes: TextBoxData[]) => void;
+  signatures: SignatureData[];
+  onSignaturesChange: (signatures: SignatureData[]) => void;
   scale: number;
 }
 
@@ -25,6 +29,8 @@ export default function PDFViewer({
   pdfFile,
   textBoxes,
   onTextBoxesChange,
+  signatures,
+  onSignaturesChange,
   scale,
 }: PDFViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,8 +46,69 @@ export default function PDFViewer({
     pdfX: number;
     pdfY: number;
   } | null>(null);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [pendingSignatureLocation, setPendingSignatureLocation] = useState<{
+    pageNumber: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const renderingRef = useRef<Set<number>>(new Set());
+  const [clipboard, setClipboard] = useState<{ type: 'textbox' | 'signature'; data: TextBoxData | SignatureData } | null>(null);
+
+  // Handle keyboard shortcuts (copy/paste)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Ctrl+C or Cmd+C (copy)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedId) {
+        e.preventDefault();
+        
+        // Find the selected item
+        const selectedTextBox = textBoxes.find((tb) => tb.id === selectedId);
+        if (selectedTextBox) {
+          setClipboard({ type: 'textbox', data: { ...selectedTextBox } });
+          return;
+        }
+        
+        const selectedSignature = signatures.find((sig) => sig.id === selectedId);
+        if (selectedSignature) {
+          setClipboard({ type: 'signature', data: { ...selectedSignature } });
+        }
+      }
+      
+      // Check for Ctrl+V or Cmd+V (paste)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboard) {
+        e.preventDefault();
+        
+        const offset = 20; // Offset for pasted item
+        
+        if (clipboard.type === 'textbox') {
+          const original = clipboard.data as TextBoxData;
+          const newTextBox: TextBoxData = {
+            ...original,
+            id: `textbox-${Date.now()}`,
+            x: original.x + offset,
+            y: original.y + offset,
+          };
+          onTextBoxesChange([...textBoxes, newTextBox]);
+          setSelectedId(newTextBox.id);
+        } else if (clipboard.type === 'signature') {
+          const original = clipboard.data as SignatureData;
+          const newSignature: SignatureData = {
+            ...original,
+            id: `signature-${Date.now()}`,
+            x: original.x + offset,
+            y: original.y + offset,
+          };
+          onSignaturesChange([...signatures, newSignature]);
+          setSelectedId(newSignature.id);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, textBoxes, signatures, clipboard, onTextBoxesChange, onSignaturesChange]);
 
   // Load PDF document
   useEffect(() => {
@@ -157,7 +224,6 @@ export default function PDFViewer({
 
   // Handle click on PDF area (deselect)
   const handleClick = useCallback((e: React.MouseEvent) => {
-    // Only deselect if clicking on the PDF canvas area, not on a text box
     if ((e.target as HTMLElement).tagName === 'DIV') {
       setSelectedId(null);
     }
@@ -186,6 +252,43 @@ export default function PDFViewer({
     setContextMenu(null);
   }, [contextMenu, textBoxes, onTextBoxesChange]);
 
+  // Open signature modal
+  const handleAddSignature = useCallback(() => {
+    if (!contextMenu) return;
+
+    setPendingSignatureLocation({
+      pageNumber: contextMenu.pageNumber,
+      x: contextMenu.pdfX,
+      y: contextMenu.pdfY,
+    });
+    setShowSignatureModal(true);
+    setContextMenu(null);
+  }, [contextMenu]);
+
+  // Create signature after modal confirmation
+  const handleSignatureConfirm = useCallback(
+    (name: string, style: SignatureStyle) => {
+      if (!pendingSignatureLocation) return;
+
+      const newSignature: SignatureData = {
+        id: `signature-${Date.now()}`,
+        x: pendingSignatureLocation.x,
+        y: pendingSignatureLocation.y,
+        width: 200,
+        height: 60,
+        name,
+        style,
+        pageNumber: pendingSignatureLocation.pageNumber,
+      };
+
+      onSignaturesChange([...signatures, newSignature]);
+      setSelectedId(newSignature.id);
+      setShowSignatureModal(false);
+      setPendingSignatureLocation(null);
+    },
+    [pendingSignatureLocation, signatures, onSignaturesChange]
+  );
+
   // Update a text box
   const handleTextBoxChange = useCallback(
     (updatedData: TextBoxData) => {
@@ -205,6 +308,25 @@ export default function PDFViewer({
     [textBoxes, onTextBoxesChange]
   );
 
+  // Update a signature
+  const handleSignatureChange = useCallback(
+    (updatedData: SignatureData) => {
+      onSignaturesChange(
+        signatures.map((sig) => (sig.id === updatedData.id ? updatedData : sig))
+      );
+    },
+    [signatures, onSignaturesChange]
+  );
+
+  // Delete a signature
+  const handleDeleteSignature = useCallback(
+    (id: string) => {
+      onSignaturesChange(signatures.filter((sig) => sig.id !== id));
+      setSelectedId(null);
+    },
+    [signatures, onSignaturesChange]
+  );
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -216,9 +338,16 @@ export default function PDFViewer({
 
   return (
     <div ref={containerRef} className="flex flex-col items-center gap-8 py-8">
+      {/* Load signature fonts */}
+      <link
+        href="https://fonts.googleapis.com/css2?family=Allura&family=Caveat:wght@700&family=Dancing+Script:wght@700&family=Great+Vibes&display=swap"
+        rel="stylesheet"
+      />
+
       {pages.map((pageData, index) => {
         const { pageNumber, width, height } = pageData;
         const pageTextBoxes = textBoxes.filter((tb) => tb.pageNumber === pageNumber);
+        const pageSignatures = signatures.filter((sig) => sig.pageNumber === pageNumber);
 
         return (
           <div
@@ -264,6 +393,19 @@ export default function PDFViewer({
                 onDelete={() => handleDeleteTextBox(textBox.id)}
               />
             ))}
+
+            {/* Render signatures */}
+            {pageSignatures.map((signature) => (
+              <Signature
+                key={signature.id}
+                data={signature}
+                scale={scale}
+                isSelected={selectedId === signature.id}
+                onSelect={() => setSelectedId(signature.id)}
+                onChange={handleSignatureChange}
+                onDelete={() => handleDeleteSignature(signature.id)}
+              />
+            ))}
           </div>
         );
       })}
@@ -275,9 +417,19 @@ export default function PDFViewer({
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
           onAddTextBox={handleAddTextBox}
+          onAddSignature={handleAddSignature}
         />
       )}
+
+      {/* Signature Modal */}
+      <SignatureModal
+        isOpen={showSignatureModal}
+        onClose={() => {
+          setShowSignatureModal(false);
+          setPendingSignatureLocation(null);
+        }}
+        onConfirm={handleSignatureConfirm}
+      />
     </div>
   );
 }
-

@@ -3,7 +3,9 @@
 import { useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import type { TextBoxData } from '@/components/TextBox';
-import { exportPDFWithTextBoxes, downloadBlob } from '@/utils/pdfExport';
+import type { SignatureData } from '@/components/Signature';
+import { exportPDFWithAnnotations, downloadBlob } from '@/utils/pdfExport';
+import DownloadModal from '@/components/DownloadModal';
 
 // Dynamic import to avoid SSR issues with PDF.js
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), {
@@ -18,15 +20,18 @@ const PDFViewer = dynamic(() => import('@/components/PDFViewer'), {
 export default function Home() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [textBoxes, setTextBoxes] = useState<TextBoxData[]>([]);
+  const [signatures, setSignatures] = useState<SignatureData[]>([]);
   const [scale, setScale] = useState(1.5);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = useCallback((file: File) => {
     if (file.type === 'application/pdf') {
       setPdfFile(file);
       setTextBoxes([]);
+      setSignatures([]);
     } else {
       alert('Please upload a PDF file');
     }
@@ -59,25 +64,35 @@ export default function Home() {
     [handleFileUpload]
   );
 
-  const handleExport = useCallback(async () => {
+  const handleDownloadClick = useCallback(() => {
+    setShowDownloadModal(true);
+  }, []);
+
+  const handleExport = useCallback(async (filename: string) => {
     if (!pdfFile) return;
 
     setIsExporting(true);
     try {
-      const blob = await exportPDFWithTextBoxes(pdfFile, textBoxes);
-      const filename = pdfFile.name.replace('.pdf', '_edited.pdf');
+      const blob = await exportPDFWithAnnotations(pdfFile, textBoxes, signatures);
       downloadBlob(blob, filename);
+      setShowDownloadModal(false);
     } catch (error) {
       console.error('Error exporting PDF:', error);
       alert('Error exporting PDF. Please try again.');
     } finally {
       setIsExporting(false);
     }
-  }, [pdfFile, textBoxes]);
+  }, [pdfFile, textBoxes, signatures]);
+
+  const getDefaultFilename = useCallback(() => {
+    if (!pdfFile) return 'document_signed.pdf';
+    return pdfFile.name.replace('.pdf', '_signed.pdf');
+  }, [pdfFile]);
 
   const handleNewDocument = useCallback(() => {
     setPdfFile(null);
     setTextBoxes([]);
+    setSignatures([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -106,7 +121,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">DocEdit</h1>
-              <p className="text-xs text-text-muted">PDF Editor</p>
+              <p className="text-xs text-text-muted">PDF Editor & E-Sign</p>
             </div>
           </div>
 
@@ -142,28 +157,18 @@ export default function Home() {
                 New Document
               </button>
               <button
-                onClick={handleExport}
-                disabled={isExporting}
+                onClick={handleDownloadClick}
                 className="btn-primary text-sm flex items-center gap-2"
               >
-                {isExporting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                    Exporting...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                      />
-                    </svg>
-                    Download PDF
-                  </>
-                )}
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                  />
+                </svg>
+                Download PDF
               </button>
             </div>
           )}
@@ -177,11 +182,11 @@ export default function Home() {
           <div className="max-w-4xl mx-auto px-6 py-20">
             <div className="text-center mb-12 animate-fade-in">
               <h2 className="text-4xl font-bold mb-4 bg-gradient-to-r from-foreground to-text-muted bg-clip-text text-transparent">
-                Edit Your PDF Documents
+                Edit & Sign Your PDFs
               </h2>
               <p className="text-lg text-text-muted max-w-xl mx-auto">
-                Upload a PDF, right-click to add text boxes, customize fonts and colors,
-                then download your edited document.
+                Upload a PDF, add text boxes and e-signatures, customize fonts and colors,
+                then download your signed document.
               </p>
             </div>
 
@@ -272,13 +277,13 @@ export default function Home() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
                     />
                   </svg>
                 </div>
-                <h3 className="font-semibold mb-2">Right-Click to Add</h3>
+                <h3 className="font-semibold mb-2">Add Text Boxes</h3>
                 <p className="text-sm text-text-muted">
-                  Right-click anywhere to add a text box. Drag to move, resize with the handle.
+                  Right-click to add text. Customize font, size, and color to match your needs.
                 </p>
               </div>
 
@@ -289,13 +294,13 @@ export default function Home() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+                      d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
                     />
                   </svg>
                 </div>
-                <h3 className="font-semibold mb-2">Customize Text</h3>
+                <h3 className="font-semibold mb-2">E-Signatures</h3>
                 <p className="text-sm text-text-muted">
-                  Change font, size, color, and style. Make your edits look exactly right.
+                  Create beautiful signatures from your name. Choose from multiple elegant styles.
                 </p>
               </div>
 
@@ -310,9 +315,9 @@ export default function Home() {
                     />
                   </svg>
                 </div>
-                <h3 className="font-semibold mb-2">Download Edited PDF</h3>
+                <h3 className="font-semibold mb-2">Download Signed PDF</h3>
                 <p className="text-sm text-text-muted">
-                  Export your edited document as a new PDF with all text boxes embedded.
+                  Export your document with all text and signatures permanently embedded.
                 </p>
               </div>
             </div>
@@ -340,8 +345,10 @@ export default function Home() {
                     ({(pdfFile.size / 1024).toFixed(1)} KB)
                   </span>
                 </div>
-                <div className="text-sm text-text-muted">
-                  {textBoxes.length} text box{textBoxes.length !== 1 ? 'es' : ''}
+                <div className="flex items-center gap-4 text-sm text-text-muted">
+                  <span>{textBoxes.length} text box{textBoxes.length !== 1 ? 'es' : ''}</span>
+                  <span>•</span>
+                  <span>{signatures.length} signature{signatures.length !== 1 ? 's' : ''}</span>
                 </div>
               </div>
             </div>
@@ -359,8 +366,8 @@ export default function Home() {
                     />
                   </svg>
                   <span>
-                    <strong>Tip:</strong> Right-click to add a text box. Double-click to edit text.
-                    Drag to move, use the corner handle to resize.
+                    <strong>Tip:</strong> Right-click to add a text box or e-signature. Double-click to edit.
+                    Drag to move, resize with corner handle. <kbd className="px-1 py-0.5 bg-surface rounded text-xs font-mono">Ctrl+C</kbd> / <kbd className="px-1 py-0.5 bg-surface rounded text-xs font-mono">Ctrl+V</kbd> to copy/paste.
                   </span>
                 </p>
               </div>
@@ -372,6 +379,8 @@ export default function Home() {
                 pdfFile={pdfFile}
                 textBoxes={textBoxes}
                 onTextBoxesChange={setTextBoxes}
+                signatures={signatures}
+                onSignaturesChange={setSignatures}
                 scale={scale}
               />
             </div>
@@ -385,6 +394,15 @@ export default function Home() {
           <p>All processing happens in your browser. Your documents never leave your device.</p>
         </div>
       </footer>
+
+      {/* Download Modal */}
+      <DownloadModal
+        isOpen={showDownloadModal}
+        defaultFilename={getDefaultFilename()}
+        onClose={() => setShowDownloadModal(false)}
+        onConfirm={handleExport}
+        isExporting={isExporting}
+      />
     </div>
   );
 }
